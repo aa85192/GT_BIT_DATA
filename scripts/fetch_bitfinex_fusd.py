@@ -75,6 +75,39 @@ def fetch_trades(start_ms: int, end_ms: int):
     )
 
 
+def fetch_trades_paginated(start_ms: int, end_ms: int, max_pages: int = 20):
+    """自動分頁抓取 trades，避免單次 1000 筆截斷。
+    用 sort=1 (舊→新)，每頁拿到的最後一筆 mts+1 當作下一頁 start。
+    """
+    all_trades = []
+    cursor = start_ms
+
+    for _ in range(max_pages):
+        page = http_get(
+            f"trades/{SYMBOL}/hist",
+            params={
+                "start": cursor,
+                "end": end_ms,
+                "sort": 1,
+                "limit": LIMIT,
+            },
+        )
+        if not page:
+            break
+
+        all_trades.extend(page)
+
+        if len(page) < LIMIT:
+            break  # 不滿一頁，代表已經抓完
+
+        # 下一頁從最後一筆的 mts + 1 開始
+        last_mts = page[-1][1]
+        cursor = last_mts + 1
+        time.sleep(0.3)
+
+    return all_trades
+
+
 def fetch_candles(start_ms: int, end_ms: int):
     """融資 K 線可能在某些時段沒有資料，所以不 raise — 回傳空代表該時段無成交"""
     last_exc = None

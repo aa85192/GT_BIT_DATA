@@ -3,12 +3,24 @@ name: Backfill Bitfinex fUSD historical data
 on:
   workflow_dispatch:
     inputs:
-      from_date:
-        description: "起始日期 (YYYY-MM-DD)"
+      mode:
+        description: "模式: auto（自動往前抓）或 manual（指定日期）"
         required: true
+        default: "auto"
+        type: choice
+        options:
+          - auto
+          - manual
+      from_date:
+        description: "manual 模式: 起始日期 (YYYY-MM-DD)"
+        required: false
         type: string
       to_date:
-        description: "結束日期 (YYYY-MM-DD，留空=現在)"
+        description: "manual 模式: 結束日期 (YYYY-MM-DD，留空=現在)"
+        required: false
+        type: string
+      origin_date:
+        description: "auto 模式: 最遠追溯日期（預設 2016-07-28）"
         required: false
         type: string
       window_min:
@@ -19,7 +31,7 @@ on:
       sleep_sec:
         description: "每段間隔秒數"
         required: false
-        default: "1.5"
+        default: "3"
         type: string
 
 permissions:
@@ -47,11 +59,17 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run backfill
-        working-directory: .
         run: |
-          ARGS="--from ${{ inputs.from_date }} --window-min ${{ inputs.window_min }} --sleep ${{ inputs.sleep_sec }}"
-          if [ -n "${{ inputs.to_date }}" ]; then
-            ARGS="$ARGS --to ${{ inputs.to_date }}"
+          if [ "${{ inputs.mode }}" = "auto" ]; then
+            ARGS="--auto --window-min ${{ inputs.window_min }} --sleep ${{ inputs.sleep_sec }}"
+            if [ -n "${{ inputs.origin_date }}" ]; then
+              ARGS="$ARGS --origin ${{ inputs.origin_date }}"
+            fi
+          else
+            ARGS="--from ${{ inputs.from_date }} --window-min ${{ inputs.window_min }} --sleep ${{ inputs.sleep_sec }}"
+            if [ -n "${{ inputs.to_date }}" ]; then
+              ARGS="$ARGS --to ${{ inputs.to_date }}"
+            fi
           fi
           python scripts/backfill_bitfinex_fusd.py $ARGS
 
@@ -61,5 +79,5 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add data meta
           git diff --cached --quiet && echo "No changes" && exit 0
-          git commit -m "backfill fUSD: ${{ inputs.from_date }} → ${{ inputs.to_date || 'now' }}"
+          git commit -m "backfill fUSD: ${{ inputs.mode }} mode $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
           git push
