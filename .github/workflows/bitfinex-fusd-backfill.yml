@@ -26,7 +26,7 @@ on:
       window_min:
         description: "每段窗口分鐘數"
         required: false
-        default: "60"
+        default: "360"
         type: string
       sleep_sec:
         description: "每段間隔秒數"
