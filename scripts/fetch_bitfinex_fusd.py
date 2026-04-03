@@ -10,13 +10,14 @@ import requests
 
 BASE_URL = "https://api-pub.bitfinex.com/v2"
 SYMBOL = os.getenv("BITFINEX_SYMBOL", "fUSD")
-LOOKBACK_MIN = int(os.getenv("LOOKBACK_MIN", "15"))
+LOOKBACK_MIN = int(os.getenv("LOOKBACK_MIN", "30"))
 LIMIT = int(os.getenv("BITFINEX_LIMIT", "1000"))
 TIMEOUT = int(os.getenv("HTTP_TIMEOUT_SEC", "20"))
 
-# 先試官方最直覺格式，失敗再 fallback 到 funding period 版本
+# 融資 K 線必須指定 period；a30:p2:p30 聚合 2~30 天所有 period，資料最完整
+# 若聚合格式失敗，fallback 到單一 30 天 period
 CANDLE_CANDIDATES = [
-    os.getenv("BITFINEX_CANDLE", "trade:1m:fUSD"),
+    os.getenv("BITFINEX_CANDLE", "trade:1m:fUSD:a30:p2:p30"),
     os.getenv("BITFINEX_CANDLE_FALLBACK", "trade:1m:fUSD:p30"),
 ]
 
@@ -74,6 +75,7 @@ def fetch_trades(start_ms: int, end_ms: int):
 
 
 def fetch_candles(start_ms: int, end_ms: int):
+    """融資 K 線可能在某些時段沒有資料，所以不 raise — 回傳空代表該時段無成交"""
     last_exc = None
     for candle_key in CANDLE_CANDIDATES:
         try:
@@ -86,13 +88,17 @@ def fetch_candles(start_ms: int, end_ms: int):
                     "limit": LIMIT,
                 },
             )
-            return candle_key, data
+            if isinstance(data, list) and len(data) > 0:
+                return candle_key, data
+            last_exc = RuntimeError(f"Empty response for {candle_key}")
         except Exception as e:
             last_exc = e
-    raise RuntimeError(f"All candle candidates failed: {last_exc}")
+    print(f"[WARN] All candle candidates returned empty or failed: {last_exc}")
+    return CANDLE_CANDIDATES[0], []
 
 
 def fetch_funding_stats(start_ms: int, end_ms: int):
+    """funding/stats 端點不支援 limit 參數，傳了會 500"""
     try:
         return http_get(
             f"funding/stats/{SYMBOL}/hist",
@@ -100,7 +106,6 @@ def fetch_funding_stats(start_ms: int, end_ms: int):
                 "start": start_ms,
                 "end": end_ms,
                 "sort": 1,
-                "limit": LIMIT,
             },
         )
     except Exception:
@@ -125,17 +130,23 @@ def load_existing_jsonl_ids(path: Path) -> set[str]:
 
 
 def append_trades_jsonl(trades: list):
+    """Funding trades 格式: [ID, MTS, AMOUNT, RATE, PERIOD]
+    AMOUNT > 0 表示融資提供方成交，< 0 表示借入方成交
+    RATE 為日利率，PERIOD 為天數
+    """
     grouped = defaultdict(list)
     for row in trades:
-        if not isinstance(row, list) or len(row) < 4:
+        if not isinstance(row, list) or len(row) < 5:
             continue
-        trade_id = row[0]
-        mts = row[1]
+        trade_id, mts, amount, rate, period = row[:5]
         grouped[day_str_from_ms(mts)].append(
             {
                 "id": trade_id,
                 "mts": mts,
                 "ts_utc": ms_to_iso(mts),
+                "amount": amount,
+                "rate": rate,
+                "period": period,
                 "raw": row,
             }
         )
@@ -216,19 +227,24 @@ def append_candles_csv(candle_key: str, candles: list):
 
 
 def append_funding_stats_csv(rows: list):
+    """Funding stats 格式 (12 欄位):
+    [MTS, _, _, FRR, AVG_PERIOD, _, _, FUNDING_AMOUNT, FUNDING_AMOUNT_USED, _, _, FUNDING_BELOW_THRESHOLD]
+    索引:  0   1  2   3      4      5  6       7               8            9  10          11
+    """
     grouped = defaultdict(list)
     for row in rows:
-        if not isinstance(row, list) or len(row) < 5:
+        if not isinstance(row, list) or len(row) < 9:
             continue
         mts = row[0]
         grouped[day_str_from_ms(mts)].append(
             {
-                "mts": row[0],
-                "ts_utc": ms_to_iso(row[0]),
-                "frr": row[1],
-                "avg_period": row[2],
-                "amount": row[3],
-                "amount_used": row[4],
+                "mts": mts,
+                "ts_utc": ms_to_iso(mts),
+                "frr": row[3],
+                "avg_period": row[4],
+                "funding_amount": row[7],
+                "funding_amount_used": row[8],
+                "funding_below_threshold": row[11] if len(row) > 11 else None,
                 "raw": json.dumps(row, ensure_ascii=False),
             }
         )
@@ -237,13 +253,17 @@ def append_funding_stats_csv(rows: list):
     out_dir = DATA_DIR / "funding_stats" / SYMBOL
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    fieldnames = [
+        "mts", "ts_utc", "frr", "avg_period",
+        "funding_amount", "funding_amount_used", "funding_below_threshold", "raw",
+    ]
+
     for day, rows_for_day in grouped.items():
         out_file = out_dir / f"{day}.csv"
         exists = out_file.exists()
         existing_keys = load_existing_csv_keys(out_file, "mts")
 
         with out_file.open("a", encoding="utf-8", newline="") as f:
-            fieldnames = ["mts", "ts_utc", "frr", "avg_period", "amount", "amount_used", "raw"]
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             if not exists:
                 writer.writeheader()

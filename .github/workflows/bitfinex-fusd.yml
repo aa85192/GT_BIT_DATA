@@ -31,9 +31,9 @@ jobs:
       - name: Fetch fUSD trades/candles/stats
         env:
           BITFINEX_SYMBOL: fUSD
-          BITFINEX_CANDLE: "trade:1m:fUSD"
+          BITFINEX_CANDLE: "trade:1m:fUSD:a30:p2:p30"
           BITFINEX_CANDLE_FALLBACK: "trade:1m:fUSD:p30"
-          LOOKBACK_MIN: "15"
+          LOOKBACK_MIN: "30"
           BITFINEX_LIMIT: "1000"
           HTTP_TIMEOUT_SEC: "20"
         run: python scripts/fetch_bitfinex_fusd.py
