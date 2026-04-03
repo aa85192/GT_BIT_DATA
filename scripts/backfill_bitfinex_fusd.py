@@ -55,7 +55,7 @@ def main():
     parser.add_argument("--to", dest="to_date", help="結束日期 YYYY-MM-DD（預設現在）")
     parser.add_argument("--days", type=float, help="回補最近 N 天（與 --from 二擇一，可用小數）")
     parser.add_argument("--window-min", type=int, default=60, help="每段窗口分鐘數（預設 60）")
-    parser.add_argument("--sleep", type=float, default=1.5, help="每段間隔秒數（預設 1.5）")
+    parser.add_argument("--sleep", type=float, default=3.0, help="每段間隔秒數（預設 3.0）")
     parser.add_argument("--no-trades", action="store_true", help="跳過 trades")
     parser.add_argument("--no-candles", action="store_true", help="跳過 candles")
     parser.add_argument("--no-stats", action="store_true", help="跳過 funding stats")
@@ -104,6 +104,7 @@ def main():
                 trades = fetch_trades(cursor, seg_end)
                 new_t = append_trades_jsonl(trades)
                 total_trades += new_t
+                time.sleep(0.5)
 
             # Candles
             new_c = 0
@@ -111,6 +112,7 @@ def main():
                 candle_key, candles = fetch_candles(cursor, seg_end)
                 new_c = append_candles_csv(candle_key, candles)
                 total_candles += new_c
+                time.sleep(0.5)
 
             # Funding Stats
             new_s = 0
@@ -124,7 +126,8 @@ def main():
 
         except Exception as e:
             errors += 1
-            print(f"[{seg}/{total_windows}] ERROR: {e}", file=sys.stderr)
+            print(f"[{seg}/{total_windows}] ERROR: {e} — 等 30 秒後繼續", file=sys.stderr)
+            time.sleep(30)
 
         cursor = seg_end
         if cursor < end_ms:

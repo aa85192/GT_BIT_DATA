@@ -51,6 +51,7 @@ def http_get(path: str, params: dict | None = None, attempts: int = 4):
 
             # Bitfinex 維護/限流/短暫錯誤時做退避
             if resp.status_code in (429, 500, 502, 503, 504):
+                last_error = RuntimeError(f"HTTP {resp.status_code} {url}")
                 time.sleep(2 ** i)
                 continue
 
