@@ -1,0 +1,65 @@
+name: Backfill Bitfinex fUSD historical data
+
+on:
+  workflow_dispatch:
+    inputs:
+      from_date:
+        description: "起始日期 (YYYY-MM-DD)"
+        required: true
+        type: string
+      to_date:
+        description: "結束日期 (YYYY-MM-DD，留空=現在)"
+        required: false
+        type: string
+      window_min:
+        description: "每段窗口分鐘數"
+        required: false
+        default: "60"
+        type: string
+      sleep_sec:
+        description: "每段間隔秒數"
+        required: false
+        default: "1.5"
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bitfinex-fusd-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run backfill
+        working-directory: .
+        run: |
+          ARGS="--from ${{ inputs.from_date }} --window-min ${{ inputs.window_min }} --sleep ${{ inputs.sleep_sec }}"
+          if [ -n "${{ inputs.to_date }}" ]; then
+            ARGS="$ARGS --to ${{ inputs.to_date }}"
+          fi
+          python scripts/backfill_bitfinex_fusd.py $ARGS
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data meta
+          git diff --cached --quiet && echo "No changes" && exit 0
+          git commit -m "backfill fUSD: ${{ inputs.from_date }} → ${{ inputs.to_date || 'now' }}"
+          git push
