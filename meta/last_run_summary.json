@@ -1,19 +1,19 @@
 {
   "symbol": "fUSD",
-  "start_ms": 1788647471208,
-  "end_ms": 1788649271208,
-  "start_utc": "2026-09-05T22:31:11.208000+00:00",
-  "end_utc": "2026-09-05T23:01:11.208000+00:00",
+  "start_ms": 1788653705441,
+  "end_ms": 1788655505441,
+  "start_utc": "2026-09-06T00:15:05.441000+00:00",
+  "end_utc": "2026-09-06T00:45:05.441000+00:00",
   "candle_key_used": "trade:1m:fUSD:a30:p2:p30",
   "lookback_min": 30,
   "fetched": {
-    "trades_rows": 239,
-    "candles_rows": 4,
+    "trades_rows": 33,
+    "candles_rows": 10,
     "funding_stats_rows": 0
   },
   "new_written": {
-    "trades_rows": 239,
-    "candles_rows": 4,
+    "trades_rows": 33,
+    "candles_rows": 10,
     "funding_stats_rows": 0
   }
 }
